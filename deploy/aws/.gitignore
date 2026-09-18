@@ -1,0 +1,8 @@
+# State contains the generated database password and JWT secret. Never commit it.
+*.tfstate
+*.tfstate.*
+.terraform/
+crash.log
+# Your own values (email address, overrides).
+*.tfvars
+!terraform.tfvars.example

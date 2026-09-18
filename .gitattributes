@@ -1,0 +1,5 @@
+# Files that run on Linux must keep Unix line endings even when edited on Windows.
+*.tftpl text eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.tf text eol=lf

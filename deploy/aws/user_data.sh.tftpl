@@ -1,0 +1,42 @@
+#!/bin/bash
+# Runs once, as root, when the server first boots. Output goes to
+# /var/log/nutrition-bootstrap.log, which is the first place to look if the API
+# is not answering.
+set -euo pipefail
+exec > >(tee /var/log/nutrition-bootstrap.log) 2>&1
+
+dnf install -y docker git
+systemctl enable --now docker
+
+# IAM permissions can take a few seconds to become visible after boot, so the
+# secret read retries instead of failing the whole bootstrap.
+get_param() {
+  for attempt in 1 2 3 4 5 6; do
+    if aws ssm get-parameter --region ${region} --name "$1" --with-decryption \
+        --query Parameter.Value --output text; then
+      return 0
+    fi
+    sleep 10
+  done
+  return 1
+}
+
+DB_PASSWORD=$(get_param ${db_param})
+JWT_SECRET=$(get_param ${jwt_param})
+
+git clone --depth 1 ${repo_url} /opt/nutrition-api
+cd /opt/nutrition-api
+docker build -t nutrition-api .
+
+# Readable by root only. Docker reads it at start; nothing else needs it.
+umask 077
+cat > /opt/nutrition-api.env <<ENVEOF
+ENVIRONMENT=production
+DATABASE_URL=postgresql+psycopg://nutrition:$DB_PASSWORD@${db_host}:5432/nutrition
+JWT_SECRET=$JWT_SECRET
+CORS_ORIGINS=${cors_origins}
+ENVEOF
+
+# The image's start command creates the tables, then serves on port 8000.
+docker run -d --name api --restart unless-stopped \
+  -p 80:8000 --env-file /opt/nutrition-api.env nutrition-api

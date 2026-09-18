@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .config import get_settings
 from .routers import auth, entries
 
 app = FastAPI(
@@ -11,10 +12,11 @@ app = FastAPI(
 )
 
 # The PWA is served from a different origin, so the browser needs this to call
-# the API at all. Tighten allow_origins to the real domain before production.
+# the API at all. The allowed origins come from CORS_ORIGINS, so a deployment
+# lists exactly the sites it serves instead of editing code.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:4173"],
+    allow_origins=get_settings().cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
