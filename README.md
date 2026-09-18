@@ -101,20 +101,28 @@ tests/
 
 ## Tests
 
-17 tests covering authentication, validation, aggregation and cross-user access
-control.
+23 tests covering authentication, validation, aggregation, cross-user access
+control, table creation and production configuration.
 
 ```
 pytest -q
-17 passed
+23 passed
 ```
 
 CI runs ruff and the full suite on every push, and builds the Docker image.
 
+## Deploying to AWS
+
+`deploy/aws` holds Terraform for an EC2 server running the Docker image, a private
+RDS PostgreSQL database, IAM roles, secrets in SSM Parameter Store and a billing
+alarm. See [deploy/aws/DEPLOY.md](deploy/aws/DEPLOY.md) for the steps, the cost
+and the design decisions.
+
 ## Not done yet
 
-- Alembic migrations. Tables are created from metadata; a real deployment needs
-  versioned migrations.
+- Alembic migrations. Tables are created from the models at start
+  (`python -m app.init_db`), which cannot change an existing schema.
+- HTTPS in front of the AWS deployment.
 - Refresh tokens. Access tokens expire after an hour with no refresh flow.
 - Rate limiting on `/auth/login`.
 - Wiring the Calorie Tracker PWA to this instead of browser storage.
