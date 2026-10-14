@@ -19,6 +19,8 @@ docker compose up --build
 
 API on http://localhost:8000, interactive docs on http://localhost:8000/docs.
 
+End-to-end API checks: import `postman/nutrition-api.postman_collection.json` into Postman and run it (or `npx newman run postman/nutrition-api.postman_collection.json`). 14 requests cover signup, duplicate-email 409, validation 422s, login, 401s without a token or with a wrong password, entry CRUD, the daily summary totals, and the 404 on a deleted entry.
+
 Without Docker:
 
 ```bash

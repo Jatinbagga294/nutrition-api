@@ -1,0 +1,213 @@
+{
+  "info": {
+    "name": "Nutrition API",
+    "description": "End-to-end checks for the Nutrition API. Run the whole collection in order (Collection Runner or `npx newman run postman/nutrition-api.postman_collection.json`). It signs up a fresh throwaway user each run, so it can be re-run against the same database.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8000" },
+    { "key": "email", "value": "" },
+    { "key": "password", "value": "correct-horse-42" },
+    { "key": "token", "value": "" },
+    { "key": "entryId", "value": "" },
+    { "key": "today", "value": "" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get('email')) {",
+          "  pm.collectionVariables.set('email', `postman+${Date.now()}@example.com`);",
+          "}",
+          "pm.collectionVariables.set('today', new Date().toISOString().slice(0, 10));"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": { "method": "GET", "url": "{{baseUrl}}/health" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('200 OK', () => pm.response.to.have.status(200));"
+      ] } }]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Sign up",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/signup",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"daily_calorie_goal\": 2200\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "const u = pm.response.json();",
+            "pm.test('echoes email and goal, never the password hash', () => {",
+            "  pm.expect(u.email).to.eql(pm.collectionVariables.get('email'));",
+            "  pm.expect(u.daily_calorie_goal).to.eql(2200);",
+            "  pm.expect(u).to.not.have.property('password_hash');",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "Sign up again with same email -> 409",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/signup",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('409 Conflict on duplicate email', () => pm.response.to.have.status(409));"
+          ] } }]
+        },
+        {
+          "name": "Sign up with short password -> 422",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/signup",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"short.{{email}}\",\n  \"password\": \"short\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('422 validation error', () => pm.response.to.have.status(422));"
+          ] } }]
+        },
+        {
+          "name": "Login with wrong password -> 401",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "urlencoded", "urlencoded": [
+              { "key": "username", "value": "{{email}}" },
+              { "key": "password", "value": "not-the-password" }
+            ] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));",
+            "pm.test('same message as unknown user (no account enumeration)', () => {",
+            "  pm.expect(pm.response.json().detail).to.eql('Incorrect email or password');",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "urlencoded", "urlencoded": [
+              { "key": "username", "value": "{{email}}" },
+              { "key": "password", "value": "{{password}}" }
+            ] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const t = pm.response.json();",
+            "pm.test('bearer token returned', () => {",
+            "  pm.expect(t.token_type).to.eql('bearer');",
+            "  pm.expect(t.access_token).to.be.a('string').and.not.empty;",
+            "});",
+            "pm.collectionVariables.set('token', t.access_token);"
+          ] } }]
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/me",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}" }] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('returns the signed-in user', () => pm.expect(pm.response.json().email).to.eql(pm.collectionVariables.get('email')));"
+          ] } }]
+        },
+        {
+          "name": "Me without token -> 401",
+          "request": { "method": "GET", "url": "{{baseUrl}}/auth/me" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "Entries",
+      "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}" }] },
+      "item": [
+        {
+          "name": "Create entry",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/entries",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Oatmeal with banana\",\n  \"calories\": 350,\n  \"protein_g\": 10,\n  \"carbs_g\": 60,\n  \"fat_g\": 6\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "const e = pm.response.json();",
+            "pm.test('defaults logged_on to today', () => pm.expect(e.logged_on).to.eql(pm.collectionVariables.get('today')));",
+            "pm.collectionVariables.set('entryId', e.id);"
+          ] } }]
+        },
+        {
+          "name": "Create entry with negative calories -> 422",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/entries",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Bad\",\n  \"calories\": -5\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('422 validation error', () => pm.response.to.have.status(422));"
+          ] } }]
+        },
+        {
+          "name": "List today's entries",
+          "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/entries?on={{today}}", "host": ["{{baseUrl}}"], "path": ["entries"], "query": [{ "key": "on", "value": "{{today}}" }] } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('contains the new entry', () => {",
+            "  const ids = pm.response.json().map(e => e.id);",
+            "  pm.expect(ids).to.include(Number(pm.collectionVariables.get('entryId')));",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "Daily summary",
+          "request": { "method": "GET", "url": "{{baseUrl}}/entries/summary" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const s = pm.response.json();",
+            "pm.test('totals match the one entry', () => {",
+            "  pm.expect(s.total_calories).to.eql(350);",
+            "  pm.expect(s.total_protein_g).to.eql(10);",
+            "  pm.expect(s.entry_count).to.eql(1);",
+            "});",
+            "pm.test('remaining = goal - calories', () => pm.expect(s.remaining).to.eql(s.goal - s.total_calories));"
+          ] } }]
+        },
+        {
+          "name": "Delete entry",
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/entries/{{entryId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+          ] } }]
+        },
+        {
+          "name": "Delete same entry again -> 404",
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/entries/{{entryId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('404 once gone (and for other users\\' entries)', () => pm.response.to.have.status(404));"
+          ] } }]
+        }
+      ]
+    }
+  ]
+}
